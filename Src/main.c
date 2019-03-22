@@ -72,6 +72,8 @@ osThreadId defaultTaskHandle;
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
 
+float wave1[32000];
+
 float f1 = 440;
 float sampling_frequency = 16000;
 /* USER CODE END PV */
@@ -424,11 +426,15 @@ void StartDefaultTask(void const * argument)
 		if(tim3_flag == 1) {
 			tim3_flag = 0;
 			
-			s = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
+			//s = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
 			
 			s = (s+1)*50;
+			wave1[i] = (s+1)*50;
+			
 			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, s);
-			i++;
+			
+			if(i == 31999){ i = 0;}
+			else{i++;}
 		}
   }
   /* USER CODE END 5 */ 
