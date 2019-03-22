@@ -71,6 +71,9 @@ osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
+
+float f1 = 440;
+float sampling_frequency = 16000;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -412,10 +415,21 @@ void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
+	int i = 0;
+	float s;
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    //osDelay(1);
+		if(tim3_flag == 1) {
+			tim3_flag = 0;
+			
+			s = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
+			
+			s = (s+1)*50;
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, s);
+			i++;
+		}
   }
   /* USER CODE END 5 */ 
 }
@@ -431,7 +445,7 @@ void StartDefaultTask(void const * argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-
+	tim3_flag = 1;	// need to set flag
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM17) {
     HAL_IncTick();

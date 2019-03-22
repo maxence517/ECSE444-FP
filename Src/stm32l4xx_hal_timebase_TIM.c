@@ -99,6 +99,7 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
    
   /* Compute the prescaler value to have TIM17 counter clock equal to 1MHz */
   uwPrescalerValue = (uint32_t) ((uwTimclock / 1000000) - 1);
+	//((uwTimclock / 1000000) - 1);
   
   /* Initialize TIM17 */
   htim17.Instance = TIM17;
@@ -109,7 +110,7 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
   + ClockDivision = 0
   + Counter direction = Up
   */
-  htim17.Init.Period = (1000000 / 1000) - 1;
+  htim17.Init.Period = (1000000/16000)-1;							//(1000000 / 1000) - 1;
   htim17.Init.Prescaler = uwPrescalerValue;
   htim17.Init.ClockDivision = 0;
   htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
