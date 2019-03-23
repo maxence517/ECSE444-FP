@@ -72,10 +72,20 @@ osThreadId defaultTaskHandle;
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
 
-float wave1[32000];
+//float wave1[32000];
+//float wave2[32000];
 
-float f1 = 440;
+//float x1[32000];
+//float x2[32000];
+
+float f1 = 261.63;
+float f2 = 392;
 float sampling_frequency = 16000;
+
+float32_t a[4] = {2, 4, 5, 3};	// steps for initializing the matrix
+arm_matrix_instance_f32 matrix_a = {2, 2, a};
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -418,23 +428,39 @@ void StartDefaultTask(void const * argument)
 
   /* USER CODE BEGIN 5 */
 	int i = 0;
-	float s;
-  /* Infinite loop */
+	float s1, s2;
+	
+	float32_t x[2];
+	//arm_matrix_instance_f32 matrix_x;
+	//arm_mat_init_f32(&matrix_x, 2, 1, x);
+  arm_matrix_instance_f32 matrix_x = {2, 1, x};	
+	
+	/* Infinite loop */
   for(;;)
   {
     //osDelay(1);
 		if(tim3_flag == 1) {
 			tim3_flag = 0;
 			
-			//s = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
+			s1 = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
+			s2 = arm_sin_f32((2 * PI * f2 * i) / sampling_frequency);
+			s1 = (s1+1)*50;
+			s2 = (s2+1)*50;
+			//wave1[i] = (s+1)*50;
 			
-			s = (s+1)*50;
-			wave1[i] = (s+1)*50;
-			
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, s);
-			
-			if(i == 31999){ i = 0;}
-			else{i++;}
+
+				float s[2] = {s1, s2};
+				arm_matrix_instance_f32 matrix_s = {2, 1, s};
+				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);	// result in x
+				//x1[i] = x[0];
+				//x2[i] = x[1];
+
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x[0]);	// output to dac
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, x[1]);	// output to dac
+			if(i==31999) i=-1;
+				
+			i++;
+
 		}
   }
   /* USER CODE END 5 */ 
