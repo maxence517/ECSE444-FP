@@ -54,6 +54,8 @@
 /* USER CODE BEGIN Includes */
 #include "arm_math.h"
 #include "stm32l475e_iot01_qspi.h"
+
+#define WRITE_READ_ADDR     ((uint32_t)0x0050)
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -71,6 +73,21 @@ osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
+
+//float wave1[32000];
+//float wave2[32000];
+
+//float x1[32000];
+//float x2[32000];
+
+float f1 = 261.63;
+float f2 = 392;
+float sampling_frequency = 16000;
+
+float32_t a[4] = {2, 4, 5, 3};	// steps for initializing the matrix
+arm_matrix_instance_f32 matrix_a = {2, 2, a};
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -135,6 +152,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+	
+	BSP_QSPI_Init();
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -412,10 +431,54 @@ void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
+	int i = 0;
+	float s1, s2;
+	
+	float32_t x[2];
+	//arm_matrix_instance_f32 matrix_x;
+	//arm_mat_init_f32(&matrix_x, 2, 1, x);
+  arm_matrix_instance_f32 matrix_x = {2, 1, x};	
+	
+	BSP_QSPI_Erase_Block(WRITE_READ_ADDR);
+	int saving = 1;
+	/* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    //osDelay(1);
+		if(tim3_flag == 1) {
+			tim3_flag = 0;
+			
+			if(i<32000 && saving == 1) {
+				s1 = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
+				s2 = arm_sin_f32((2 * PI * f2 * i) / sampling_frequency);
+				s1 = (s1+1)*50;
+				s2 = (s2+1)*50;
+				//wave1[i] = (s+1)*50;
+				
+
+				float s[2] = {s1, s2};
+				arm_matrix_instance_f32 matrix_s = {2, 1, s};
+				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);	// result in x
+					//x1[i] = x[0];
+					//x2[i] = x[1];
+				BSP_QSPI_Write((uint8_t*)&x[0], WRITE_READ_ADDR + i*8, 32);
+				BSP_QSPI_Write((uint8_t*)&x[1], WRITE_READ_ADDR + i*8 + 1024000, 32);
+				
+			}
+					
+			float x1, x2;
+			BSP_QSPI_Read((uint8_t*)&x1, WRITE_READ_ADDR + i*8, 32);
+			BSP_QSPI_Read((uint8_t*)&x2, WRITE_READ_ADDR + i*8 + 1024000, 32);
+			
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x1);	// output to dac
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, x2);	// output to dac
+			if(i==31999) {
+				saving = 0;
+				i=-1;
+			}
+			i++;
+
+		}
   }
   /* USER CODE END 5 */ 
 }
@@ -431,7 +494,7 @@ void StartDefaultTask(void const * argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-
+	tim3_flag = 1;	// need to set flag
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM17) {
     HAL_IncTick();
