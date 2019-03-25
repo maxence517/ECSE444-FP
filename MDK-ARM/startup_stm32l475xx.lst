@@ -712,7 +712,7 @@ erwork --depend=gxx_project\startup_stm32l475xx.d -ogxx_project\startup_stm32l4
 IS\Core\Include -IC:\Keil_v5\ARM\PACK\ARM\CMSIS\5.4.0\CMSIS\DSP\Include -IC:\Ke
 il_v5\ARM\PACK\Keil\STM32L4xx_DFP\2.2.0\Drivers\CMSIS\Device\ST\STM32L4xx\Inclu
 de --predefine="__EVAL SETA 1" --predefine="__MICROLIB SETA 1" --predefine="__U
-VISION_VERSION SETA 526" --predefine="_RTE_ SETA 1" --predefine="STM32L475xx SE
+VISION_VERSION SETA 527" --predefine="_RTE_ SETA 1" --predefine="STM32L475xx SE
 
 
 

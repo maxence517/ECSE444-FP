@@ -299,24 +299,28 @@ uint8_t BSP_QSPI_Write(uint8_t* pData, uint32_t WriteAddr, uint32_t Size)
     /* Enable write operations */
     if (QSPI_WriteEnable(&QSPIHandle) != QSPI_OK)
     {
+			printf("Error 1");
       return QSPI_ERROR;
     }
     
     /* Configure the command */
     if (HAL_QSPI_Command(&QSPIHandle, &sCommand, HAL_QPSI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
     {
+			printf("Error 2");
       return QSPI_ERROR;
     }
     
     /* Transmission of the data */
     if (HAL_QSPI_Transmit(&QSPIHandle, pData, HAL_QPSI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
     {
+			printf("Error 3");
       return QSPI_ERROR;
     }
     
     /* Configure automatic polling mode to wait for end of program */  
     if (QSPI_AutoPollingMemReady(&QSPIHandle, HAL_QPSI_TIMEOUT_DEFAULT_VALUE) != QSPI_OK)
     {
+			printf("Error 4");
       return QSPI_ERROR;
     }
     

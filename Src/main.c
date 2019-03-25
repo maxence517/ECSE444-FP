@@ -55,7 +55,10 @@
 #include "arm_math.h"
 #include "stm32l475e_iot01_qspi.h"
 
-#define WRITE_READ_ADDR     ((uint32_t)0x0050)
+#define WRITE_READ_ADDR     ((uint32_t)0x0050)  //TODO : Verify the address
+
+
+
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -74,15 +77,15 @@ osThreadId defaultTaskHandle;
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
 
-//float wave1[32000];
-//float wave2[32000];
-
-//float x1[32000];
-//float x2[32000];
-
 float f1 = 261.63;
 float f2 = 392;
 float sampling_frequency = 16000;
+
+//Buffer for writing/reading to QSPI
+uint8_t w_buff1[100];
+uint8_t w_buff2[100];
+uint8_t r_buff1[100];
+uint8_t r_buff2[100];
 
 float32_t a[4] = {2, 4, 5, 3};	// steps for initializing the matrix
 arm_matrix_instance_f32 matrix_a = {2, 2, a};
@@ -140,33 +143,15 @@ int main(void)
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_DFSDM1_Init();
   MX_DAC1_Init();
-  /* USER CODE BEGIN 2 */
+  
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 	
-	BSP_QSPI_Init();
-  /* USER CODE END 2 */
-
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
-  /* USER CODE END RTOS_MUTEX */
-
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
-  /* USER CODE END RTOS_SEMAPHORES */
-
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  /* USER CODE END RTOS_TIMERS */
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
@@ -429,7 +414,8 @@ static void MX_GPIO_Init(void)
 /* StartDefaultTask function */
 void StartDefaultTask(void const * argument)
 {
-
+	BSP_QSPI_Init();
+	
   /* USER CODE BEGIN 5 */
 	int i = 0;
 	float s1, s2;
@@ -438,8 +424,14 @@ void StartDefaultTask(void const * argument)
 	//arm_matrix_instance_f32 matrix_x;
 	//arm_mat_init_f32(&matrix_x, 2, 1, x);
   arm_matrix_instance_f32 matrix_x = {2, 1, x};	
+	int mem_c = 0; //Address counter
 	
-	BSP_QSPI_Erase_Block(WRITE_READ_ADDR);
+	
+	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
+		printf("Chip Erased \n");
+	}else{printf("Error - Clean \n");}
+	
+	
 	int saving = 1;
 	/* Infinite loop */
   for(;;)
@@ -453,7 +445,6 @@ void StartDefaultTask(void const * argument)
 				s2 = arm_sin_f32((2 * PI * f2 * i) / sampling_frequency);
 				s1 = (s1+1)*50;
 				s2 = (s2+1)*50;
-				//wave1[i] = (s+1)*50;
 				
 
 				float s[2] = {s1, s2};
@@ -461,21 +452,49 @@ void StartDefaultTask(void const * argument)
 				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);	// result in x
 					//x1[i] = x[0];
 					//x2[i] = x[1];
-				BSP_QSPI_Write((uint8_t*)&x[0], WRITE_READ_ADDR + i*8, 32);
-				BSP_QSPI_Write((uint8_t*)&x[1], WRITE_READ_ADDR + i*8 + 1024000, 32);
 				
+				//Add values to buffers
+				w_buff1[i%100] = x[0];
+				w_buff2[i%100] = x[1];
+				
+				
+				//Save the values every 100 loop
+				if(i % 99 == 0){
+					//BSP_QSPI_Write(w_buff1, WRITE_READ_ADDR + i*8, 100);
+					if(BSP_QSPI_Write(w_buff2, 2, 100) == QSPI_OK){  //Multiplicated by 8 ?
+						printf("Write OK \n");
+					}
+					else{
+						if(mem_c == 0){
+							printf("Write Error \n");
+						}
+					}
+					mem_c += 1;
+				}
 			}
-					
-			float x1, x2;
-			BSP_QSPI_Read((uint8_t*)&x1, WRITE_READ_ADDR + i*8, 32);
-			BSP_QSPI_Read((uint8_t*)&x2, WRITE_READ_ADDR + i*8 + 1024000, 32);
+			//Read every 100
+			/*if(i % 99 == 0){
+				//BSP_QSPI_Read(r_buff1, WRITE_READ_ADDR + i*8, 100);
+				if(BSP_QSPI_Read(r_buff2, WRITE_READ_ADDR + i*8, 100) == QSPI_OK){
+					printf("Read OK \n");
+				}
+				else{
+					printf("Read Error \n");
+				}
+				//printf("Read sin %d at %d \n", r_buff1[0], i);
+			}
 			
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x1);	// output to dac
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, x2);	// output to dac
+			//Write to the DAC
+			if(i >= 99){
+				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, r_buff1[i%100]);
+				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, r_buff2[i%100]);
+			}*/
+			//Stop Saving data after the 32000 samples
 			if(i==31999) {
 				saving = 0;
 				i=-1;
 			}
+			
 			i++;
 
 		}
