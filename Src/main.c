@@ -148,7 +148,9 @@ int main(void)
   MX_USART1_UART_Init();
   MX_DFSDM1_Init();
   MX_DAC1_Init();
-  
+  BSP_QSPI_Init();
+		
+		
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 	
@@ -414,7 +416,6 @@ static void MX_GPIO_Init(void)
 /* StartDefaultTask function */
 void StartDefaultTask(void const * argument)
 {
-	BSP_QSPI_Init();
 	
   /* USER CODE BEGIN 5 */
 	int i = 0;
@@ -427,10 +428,10 @@ void StartDefaultTask(void const * argument)
 	int mem_c = 0; //Address counter
 	
 	
-	if(BSP_QSPI_Erase_Chip() == QSPI_OK){
+	/*if(BSP_QSPI_Erase_Chip() == QSPI_OK){
 		printf("Chip Erased \n");
 	}else{printf("Error - Clean \n");}
-	
+	*/
 	
 	int saving = 1;
 	/* Infinite loop */
@@ -460,35 +461,38 @@ void StartDefaultTask(void const * argument)
 				
 				//Save the values every 100 loop
 				if(i % 99 == 0){
-					//BSP_QSPI_Write(w_buff1, WRITE_READ_ADDR + i*8, 100);
-					if(BSP_QSPI_Write(w_buff2, 2, 100) == QSPI_OK){  //Multiplicated by 8 ?
-						printf("Write OK \n");
+					
+					BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
+					if(BSP_QSPI_Write(w_buff2, mem_c * 100, 100) != QSPI_OK){
+						printf("Write Error \n");
 					}
-					else{
-						if(mem_c == 0){
-							printf("Write Error \n");
-						}
-					}
-					mem_c += 1;
 				}
 			}
+				
 			//Read every 100
-			/*if(i % 99 == 0){
-				//BSP_QSPI_Read(r_buff1, WRITE_READ_ADDR + i*8, 100);
-				if(BSP_QSPI_Read(r_buff2, WRITE_READ_ADDR + i*8, 100) == QSPI_OK){
-					printf("Read OK \n");
-				}
-				else{
+			if(i % 99 == 0){
+				
+				BSP_QSPI_Read(r_buff1, mem_c * 100, 100);
+				if(BSP_QSPI_Read(r_buff2, mem_c * 100, 100) != QSPI_OK){
 					printf("Read Error \n");
 				}
-				//printf("Read sin %d at %d \n", r_buff1[0], i);
+				
+				for( int x = 0; x < 100 ; x++){
+					printf("Read %d \n",r_buff1[x]);
+					if(x ==99){printf("---------------------------------------------------------------- \n");}
+				}
+				
+				mem_c += 1;
+				if(i > 32000){ 
+					mem_c = 0;
+				}
 			}
 			
 			//Write to the DAC
 			if(i >= 99){
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, r_buff1[i%100]);
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, r_buff2[i%100]);
-			}*/
+			}
 			//Stop Saving data after the 32000 samples
 			if(i==31999) {
 				saving = 0;
