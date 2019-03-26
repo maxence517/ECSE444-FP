@@ -437,7 +437,6 @@ void StartDefaultTask(void const * argument)
 		if(BSP_QSPI_Erase_Sector(i) != QSPI_OK){ printf("Error - Sector Clean \n");}
 	}
 
-	
   for(;;)
   {
  
@@ -455,18 +454,13 @@ void StartDefaultTask(void const * argument)
 				arm_matrix_instance_f32 matrix_s = {2, 1, s};
 				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
 				
-					// ---------------
-					//	x1[i] = x[0];
-					//	x2[i] = x[1];
-					// ---------------
-				
 				//Add values to buffers
 				w_buff1[i%100] = (uint8_t)x[0];
 				w_buff2[i%100] = (uint8_t)x[1];
 	
 				if(i % 100 == 0){
 					//BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
-					if(BSP_QSPI_Write(w_buff2, mem_c*101, 100) != QSPI_OK){
+					if(BSP_QSPI_Write(w_buff2, mem_c*100, 100) != QSPI_OK){
 						printf("Write Error \n");
 					}
 				}
@@ -474,10 +468,10 @@ void StartDefaultTask(void const * argument)
 			}
 			
 			/**** Reading Block ****/
-			if(i % 100 == 0 & saving == 1){
+			if(i % 100 == 0 && saving == 1){
 				
-				//BSP_QSPI_Read(r_buff1, mem_c* 100, 100);
-				if(BSP_QSPI_Read(r_buff2, mem_c*101, 100) != QSPI_OK){
+				//BSP_QSPI_Read(r_buff1, mem_c* 400, 100);
+				if(BSP_QSPI_Read(r_buff2, mem_c*100, 100) != QSPI_OK){
 					printf("Read Error \n");
 				}
 				
@@ -492,7 +486,6 @@ void StartDefaultTask(void const * argument)
 				if(flags != 0){ printf(" %d Error(s) - Matching Buffer \n", flags); }
 				else{ printf("Perfect Match \n");}
 				printf("---------------------------------------------------------------- \n");
-				mem_c += 1;
 			}
 			
 			//Write to the DAC
@@ -500,14 +493,15 @@ void StartDefaultTask(void const * argument)
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, r_buff1[i%100]);
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, r_buff2[i%100]);
 			}
+			
 			//Stop Saving data after the 32000 samples
 			if(i==31999) {
 				saving = 0;
-				mem_c = 0;
+				mem_c = -1;
 				i=-1;
 				nbCycle++; 
 			}
-			
+			mem_c++;
 			i++;
 
 		}
