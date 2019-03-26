@@ -420,21 +420,26 @@ void StartDefaultTask(void const * argument)
   /* USER CODE BEGIN 5 */
 	int i = 0;
 	float s1, s2;
-	
+	int nbCycle=0; //nb of 32000 samples we have run
 	float32_t x[2];
 	//arm_matrix_instance_f32 matrix_x;
 	//arm_mat_init_f32(&matrix_x, 2, 1, x);
   arm_matrix_instance_f32 matrix_x = {2, 1, x};	
 	int mem_c = 0; //Address counter
 	
+	int nbSector=8;
 	
-	/*if(BSP_QSPI_Erase_Chip() == QSPI_OK){
-		printf("Chip Erased \n");
-	}else{printf("Error - Clean \n");}
-	*/
+	for (int i=0;i<256;i++){
+		
+		if(BSP_QSPI_Erase_Sector(i) == QSPI_OK){
+		   printf("sector Erased \n");
+	}else{printf("Error - Sector Clean \n");}
+		
+	}
 	
 	int saving = 1;
 	/* Infinite loop */
+	
   for(;;)
   {
     //osDelay(1);
@@ -460,17 +465,19 @@ void StartDefaultTask(void const * argument)
 				
 				
 				//Save the values every 100 loop
-				if(i % 99 == 0){
+				if((i+1) % 100 == 0){
 					
 					BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
+					printf("is saving \n"); //delete later
 					if(BSP_QSPI_Write(w_buff2, mem_c * 100, 100) != QSPI_OK){
 						printf("Write Error \n");
 					}
+					
 				}
 			}
 				
 			//Read every 100
-			if(i % 99 == 0){
+			if((i+1) % 100 == 0){
 				
 				BSP_QSPI_Read(r_buff1, mem_c * 100, 100);
 				if(BSP_QSPI_Read(r_buff2, mem_c * 100, 100) != QSPI_OK){
@@ -478,14 +485,15 @@ void StartDefaultTask(void const * argument)
 				}
 				
 				for( int x = 0; x < 100 ; x++){
-					printf("Read %d \n",r_buff1[x]);
+					printf("Read %d   \n",r_buff1[x]);
+					
 					if(x ==99){printf("---------------------------------------------------------------- \n");}
 				}
 				
 				mem_c += 1;
-				if(i > 32000){ 
-					mem_c = 0;
-				}
+	  //			if(i >= 31999){ 
+		//			mem_c = 0;
+		//		}
 			}
 			
 			//Write to the DAC
@@ -496,13 +504,16 @@ void StartDefaultTask(void const * argument)
 			//Stop Saving data after the 32000 samples
 			if(i==31999) {
 				saving = 0;
+				mem_c = 0;
 				i=-1;
+				nbCycle++; 
 			}
 			
 			i++;
 
 		}
   }
+	
   /* USER CODE END 5 */ 
 }
 
