@@ -416,84 +416,83 @@ static void MX_GPIO_Init(void)
 /* StartDefaultTask function */
 void StartDefaultTask(void const * argument)
 {
-	
-  /* USER CODE BEGIN 5 */
+
 	int i = 0;
 	float s1, s2;
 	int nbCycle=0; //nb of 32000 samples we have run
-	float32_t x[2];
-	//arm_matrix_instance_f32 matrix_x;
-	//arm_mat_init_f32(&matrix_x, 2, 1, x);
-  arm_matrix_instance_f32 matrix_x = {2, 1, x};	
-	int mem_c = 0; //Address counter
-	
 	int nbSector=8;
 	
-	for (int i=0;i<256;i++){
-		
-		if(BSP_QSPI_Erase_Sector(i) == QSPI_OK){
-		   printf("sector Erased \n");
-	}else{printf("Error - Sector Clean \n");}
-		
-	}
+	//Creating Matrix
+	float32_t x[2];
+  arm_matrix_instance_f32 matrix_x = {2, 1, x};	
 	
-	int saving = 1;
-	/* Infinite loop */
+	//Address counter
+	int mem_c = 0; 
+	
+	// Saving flag
+	int saving = 1; 
+	
+	//Clear Sectors
+	for (int i=0;i<255;i++){
+		if(BSP_QSPI_Erase_Sector(i) != QSPI_OK){ printf("Error - Sector Clean \n");}
+	}
+
 	
   for(;;)
   {
-    //osDelay(1);
+ 
 		if(tim3_flag == 1) {
 			tim3_flag = 0;
 			
+			/**** Writing Block ****/
 			if(i<32000 && saving == 1) {
 				s1 = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
 				s2 = arm_sin_f32((2 * PI * f2 * i) / sampling_frequency);
 				s1 = (s1+1)*50;
 				s2 = (s2+1)*50;
-				
-
+			
 				float s[2] = {s1, s2};
 				arm_matrix_instance_f32 matrix_s = {2, 1, s};
-				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);	// result in x
-					//x1[i] = x[0];
-					//x2[i] = x[1];
+				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
+				
+					// ---------------
+					//	x1[i] = x[0];
+					//	x2[i] = x[1];
+					// ---------------
 				
 				//Add values to buffers
-				w_buff1[i%100] = x[0];
-				w_buff2[i%100] = x[1];
-				
-				
-				//Save the values every 100 loop
-				if((i+1) % 100 == 0){
-					
-					BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
-					printf("is saving \n"); //delete later
-					if(BSP_QSPI_Write(w_buff2, mem_c * 100, 100) != QSPI_OK){
+				w_buff1[i%100] = (uint8_t)x[0];
+				w_buff2[i%100] = (uint8_t)x[1];
+	
+				if(i % 100 == 0){
+					//BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
+					if(BSP_QSPI_Write(w_buff2, mem_c*101, 100) != QSPI_OK){
 						printf("Write Error \n");
 					}
-					
 				}
+				
 			}
+			
+			/**** Reading Block ****/
+			if(i % 100 == 0 & saving == 1){
 				
-			//Read every 100
-			if((i+1) % 100 == 0){
-				
-				BSP_QSPI_Read(r_buff1, mem_c * 100, 100);
-				if(BSP_QSPI_Read(r_buff2, mem_c * 100, 100) != QSPI_OK){
+				//BSP_QSPI_Read(r_buff1, mem_c* 100, 100);
+				if(BSP_QSPI_Read(r_buff2, mem_c*101, 100) != QSPI_OK){
 					printf("Read Error \n");
 				}
 				
-				for( int x = 0; x < 100 ; x++){
-					printf("Read %d   \n",r_buff1[x]);
-					
-					if(x ==99){printf("---------------------------------------------------------------- \n");}
-				}
+				uint8_t flags = 0;
 				
+				// Test for Matching Buffer
+				for( int x = 0; x < 100 ; x++){
+					if(r_buff2[x] != w_buff2[x]){
+						flags += 1;
+					}
+				}
+				if(flags != 0){ printf(" %d Error(s) - Matching Buffer \n", flags); }
+				else{ printf("Perfect Match \n");}
+				printf("---------------------------------------------------------------- \n");
 				mem_c += 1;
-	  //			if(i >= 31999){ 
-		//			mem_c = 0;
-		//		}
 			}
 			
 			//Write to the DAC
