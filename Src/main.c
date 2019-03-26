@@ -72,20 +72,21 @@ osThreadId defaultTaskHandle;
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
 
-//float wave1[32000];
-//float wave2[32000];
+const int nsignals = 2;
+const int nsamples = 32000;
+const int buf_size = 100;
+const int ntransfers = nsamples / buf_size;
+float signal[nsignals][buf_size];
+float test_signal[buf_size];
 
-//float x1[32000];
-//float x2[32000];
+const uint32_t S0_START_ADDR = 0;
+const uint32_t S1_START_ADDR = nsamples * sizeof(float);
 
-float f1 = 261.63;
-float f2 = 392;
-float sampling_frequency = 16000;
+const float f[] = {261.63, 392.0};
+const uint32_t sampling_freq = 16000;
 
-float32_t a[4] = {2, 4, 5, 3};	// steps for initializing the matrix
+float32_t a[4] = {2, 4, 5, 3};
 arm_matrix_instance_f32 matrix_a = {2, 2, a};
-
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -148,10 +149,12 @@ int main(void)
   MX_DFSDM1_Init();
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
+	BSP_QSPI_Init();
+	BSP_QSPI_Erase_Chip();	
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
   /* USER CODE END 2 */
-
+	
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -427,40 +430,58 @@ void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
-	int i = 0;
-	float s1, s2;
-	
+	int wrong, t, read_from_flash, idx;
+	uint32_t offset;
 	float32_t x[2];
-	//arm_matrix_instance_f32 matrix_x;
-	//arm_mat_init_f32(&matrix_x, 2, 1, x);
-  arm_matrix_instance_f32 matrix_x = {2, 1, x};	
+	arm_matrix_instance_f32 matrix_x = {2, 1, x};
 	
-	/* Infinite loop */
+	wrong = 0;	
+	t = 0;
+	read_from_flash = 0;
+	
+  /* Infinite loop */
   for(;;)
   {
-    //osDelay(1);
-		if(tim3_flag == 1) {
+    if(tim3_flag)
+		{
 			tim3_flag = 0;
 			
-			s1 = arm_sin_f32((2 * PI * f1 * i) / sampling_frequency);
-			s2 = arm_sin_f32((2 * PI * f2 * i) / sampling_frequency);
-			s1 = (s1+1)*50;
-			s2 = (s2+1)*50;
-			//wave1[i] = (s+1)*50;
+			idx = t % buf_size;
 			
-
-				float s[2] = {s1, s2};
-				arm_matrix_instance_f32 matrix_s = {2, 1, s};
-				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);	// result in x
-				//x1[i] = x[0];
-				//x2[i] = x[1];
-
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, x[0]);	// output to dac
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, x[1]);	// output to dac
-			if(i==31999) i=-1;
+			if(read_from_flash && idx == 0)
+			{
+				// refresh buffer
+				printf("read buffer\n");
+				offset = (t % buf_size) * buf_size * sizeof(float);
+				BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));
+				BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));				
+			}
+			
+			if(!read_from_flash)
+			{
+				// calc values
 				
-			i++;
-
+				signal[0][idx] = 0.10;
+				signal[1][idx] = 0.20;
+				
+				if(idx == buf_size-1)
+				{
+					printf("write buffer\n");
+					offset = (t % (buf_size-1)) * buf_size * sizeof(float);
+					BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));	
+					BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));				
+				}
+			}
+			
+			printf("%f\t%d\t%d\n", signal[0][idx], t, read_from_flash);
+			//HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
+			//HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
+			
+			if(++t == nsamples)
+			{
+				read_from_flash = 1;
+				t = 0;
+			}
 		}
   }
   /* USER CODE END 5 */ 
@@ -477,7 +498,7 @@ void StartDefaultTask(void const * argument)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
-	tim3_flag = 1;	// need to set flag
+	tim3_flag = 1;
   /* USER CODE END Callback 0 */
   if (htim->Instance == TIM17) {
     HAL_IncTick();
