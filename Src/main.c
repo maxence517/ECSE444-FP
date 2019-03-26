@@ -1,4 +1,4 @@
-
+ 
 /**
   ******************************************************************************
   * @file           : main.c
@@ -76,10 +76,11 @@ osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 int tim3_flag = 0;
-
+int nbSaving=0; //number of savings 
 float f1 = 261.63;
 float f2 = 392;
 float sampling_frequency = 16000;
+int nb4K=0;
 
 //Buffer for writing/reading to QSPI
 uint8_t w_buff1[100];
@@ -153,7 +154,9 @@ int main(void)
 		
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
-	
+	//if(BSP_QSPI_Erase_Chip() != QSPI_OK){ printf("Error - Chip Clean \n");}else{
+		//printf("OK - Chip Clean \n");
+	//}
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
@@ -433,10 +436,14 @@ void StartDefaultTask(void const * argument)
 	int saving = 1; 
 	
 	//Clear Sectors
-	for (int i=0;i<255;i++){
-		if(BSP_QSPI_Erase_Sector(i) != QSPI_OK){ printf("Error - Sector Clean \n");}
-	}
+	//for (int i=0;i<2299;i++){
+		//if(BSP_QSPI_Erase_Sector(0x90000000) != QSPI_OK){ printf("Error - Sector Clean \n");}
+	//}
 
+	//if(BSP_QSPI_Erase_Chip() != QSPI_OK){ printf("Error - Chip Clean \n");}else{
+//		printf("OK - Chip Clean \n");
+	//}
+	
   for(;;)
   {
  
@@ -454,13 +461,24 @@ void StartDefaultTask(void const * argument)
 				arm_matrix_instance_f32 matrix_s = {2, 1, s};
 				arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
 				
+					// ---------------
+					//	x1[i] = x[0];
+					//	x2[i] = x[1];
+					// ---------------
+				
 				//Add values to buffers
 				w_buff1[i%100] = (uint8_t)x[0];
 				w_buff2[i%100] = (uint8_t)x[1];
+				
+				if((i+1)%4000==0){
+					nb4K++;
+				}
 	
 				if(i % 100 == 0){
-					//BSP_QSPI_Write(w_buff1, mem_c * 100, 100);
-					if(BSP_QSPI_Write(w_buff2, mem_c*100, 100) != QSPI_OK){
+		
+					nbSaving++;
+					if(BSP_QSPI_Write(w_buff2, mem_c*101, 100) != QSPI_OK){
+		
 						printf("Write Error \n");
 					}
 				}
@@ -468,11 +486,12 @@ void StartDefaultTask(void const * argument)
 			}
 			
 			/**** Reading Block ****/
-			if(i % 100 == 0 && saving == 1){
+			if(i % 100 == 0 & saving == 1){
 				
-				//BSP_QSPI_Read(r_buff1, mem_c* 400, 100);
-				if(BSP_QSPI_Read(r_buff2, mem_c*100, 100) != QSPI_OK){
-					printf("Read Error \n");
+		
+				if(BSP_QSPI_Read(r_buff2, mem_c*101, 100) != QSPI_OK){
+	
+						printf("Read Error \n");
 				}
 				
 				uint8_t flags = 0;
@@ -481,11 +500,13 @@ void StartDefaultTask(void const * argument)
 				for( int x = 0; x < 100 ; x++){
 					if(r_buff2[x] != w_buff2[x]){
 						flags += 1;
+				//		printf(" Error : original data=%d, error data =%d \n",w_buff2[x],r_buff2[x]);
 					}
 				}
-				if(flags != 0){ printf(" %d Error(s) - Matching Buffer \n", flags); }
-				else{ printf("Perfect Match \n");}
+				if(flags != 0){ printf(" %d Error(s) - Matching Buffer, cycle at %d, nbSaving=%d \n", flags,nbCycle,nbSaving); }
+				else{ printf("Perfect Match, cycle at %d, nbSaving=%d \n",nbCycle,nbSaving);}
 				printf("---------------------------------------------------------------- \n");
+				mem_c += 1;
 			}
 			
 			//Write to the DAC
@@ -493,15 +514,14 @@ void StartDefaultTask(void const * argument)
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, r_buff1[i%100]);
 				HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, r_buff2[i%100]);
 			}
-			
 			//Stop Saving data after the 32000 samples
 			if(i==31999) {
 				saving = 0;
-				mem_c = -1;
+				mem_c = 0;
 				i=-1;
 				nbCycle++; 
 			}
-			mem_c++;
+			
 			i++;
 
 		}
