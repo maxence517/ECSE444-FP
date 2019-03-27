@@ -6,41 +6,41 @@
   ******************************************************************************
   * This notice applies to any and all portions of this file
   * that are not between comment pairs USER CODE BEGIN and
-  * USER CODE END. Other portions of this file, whether 
+  * USER CODE END. Other portions of this file, whether
   * inserted by the user or by software development tools
   * are owned by their respective copyright owners.
   *
-  * Copyright (c) 2018 STMicroelectronics International N.V. 
+  * Copyright (c) 2018 STMicroelectronics International N.V.
   * All rights reserved.
   *
-  * Redistribution and use in source and binary forms, with or without 
+  * Redistribution and use in source and binary forms, with or without
   * modification, are permitted, provided that the following conditions are met:
   *
-  * 1. Redistribution of source code must retain the above copyright notice, 
+  * 1. Redistribution of source code must retain the above copyright notice,
   *    this list of conditions and the following disclaimer.
   * 2. Redistributions in binary form must reproduce the above copyright notice,
   *    this list of conditions and the following disclaimer in the documentation
   *    and/or other materials provided with the distribution.
-  * 3. Neither the name of STMicroelectronics nor the names of other 
-  *    contributors to this software may be used to endorse or promote products 
+  * 3. Neither the name of STMicroelectronics nor the names of other
+  *    contributors to this software may be used to endorse or promote products
   *    derived from this software without specific written permission.
-  * 4. This software, including modifications and/or derivative works of this 
+  * 4. This software, including modifications and/or derivative works of this
   *    software, must execute solely and exclusively on microcontroller or
   *    microprocessor devices manufactured by or for STMicroelectronics.
-  * 5. Redistribution and use of this software other than as permitted under 
-  *    this license is void and will automatically terminate your rights under 
-  *    this license. 
+  * 5. Redistribution and use of this software other than as permitted under
+  *    this license is void and will automatically terminate your rights under
+  *    this license.
   *
-  * THIS SOFTWARE IS PROVIDED BY STMICROELECTRONICS AND CONTRIBUTORS "AS IS" 
-  * AND ANY EXPRESS, IMPLIED OR STATUTORY WARRANTIES, INCLUDING, BUT NOT 
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+  * THIS SOFTWARE IS PROVIDED BY STMICROELECTRONICS AND CONTRIBUTORS "AS IS"
+  * AND ANY EXPRESS, IMPLIED OR STATUTORY WARRANTIES, INCLUDING, BUT NOT
+  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
   * PARTICULAR PURPOSE AND NON-INFRINGEMENT OF THIRD PARTY INTELLECTUAL PROPERTY
-  * RIGHTS ARE DISCLAIMED TO THE FULLEST EXTENT PERMITTED BY LAW. IN NO EVENT 
+  * RIGHTS ARE DISCLAIMED TO THE FULLEST EXTENT PERMITTED BY LAW. IN NO EVENT
   * SHALL STMICROELECTRONICS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
   * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, 
-  * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF 
-  * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
+  * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+  * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+  * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
   * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
   * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   *
@@ -81,12 +81,14 @@ float test_signal[buf_size];
 
 const uint32_t S0_START_ADDR = 0;
 const uint32_t S1_START_ADDR = nsamples * sizeof(float);
+const uint32_t DATA_WIDTH = (uint32_t)buf_size*sizeof(float);
 
 const float f[] = {261.63, 392.0};
 const uint32_t sampling_freq = 16000;
+const int scale_coeff = 50;
 
-float32_t a[4] = {2, 4, 5, 3};
-arm_matrix_instance_f32 matrix_a = {2, 2, a};
+const float32_t a[4] = {2, 4, 5, 3};
+const arm_matrix_instance_f32 matrix_a = {2, 2, a};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -124,7 +126,7 @@ int fgetc(FILE *f) {
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	
+
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -150,11 +152,11 @@ int main(void)
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
 	BSP_QSPI_Init();
-	BSP_QSPI_Erase_Chip();	
+	BSP_QSPI_Erase_Chip();
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
   /* USER CODE END 2 */
-	
+
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
@@ -179,16 +181,16 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
- 
+
 
   /* Start scheduler */
   osKernelStart();
-  
+
   /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	
+
 	while (1)
   {
   /* USER CODE END WHILE */
@@ -208,7 +210,7 @@ void SystemClock_Config(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct;
   RCC_PeriphCLKInitTypeDef PeriphClkInit;
 
-    /**Initializes the CPU, AHB and APB busses clocks 
+    /**Initializes the CPU, AHB and APB busses clocks
     */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
@@ -226,7 +228,7 @@ void SystemClock_Config(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**Initializes the CPU, AHB and APB busses clocks 
+    /**Initializes the CPU, AHB and APB busses clocks
     */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -257,18 +259,18 @@ void SystemClock_Config(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**Configure the main internal regulator output voltage 
+    /**Configure the main internal regulator output voltage
     */
   if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**Configure the Systick interrupt time 
+    /**Configure the Systick interrupt time
     */
   HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-    /**Configure the Systick 
+    /**Configure the Systick
     */
   HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
@@ -282,7 +284,7 @@ static void MX_DAC1_Init(void)
 
   DAC_ChannelConfTypeDef sConfig;
 
-    /**DAC Initialization 
+    /**DAC Initialization
     */
   hdac1.Instance = DAC1;
   if (HAL_DAC_Init(&hdac1) != HAL_OK)
@@ -290,7 +292,7 @@ static void MX_DAC1_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**DAC channel OUT1 config 
+    /**DAC channel OUT1 config
     */
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
@@ -302,7 +304,7 @@ static void MX_DAC1_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    /**DAC channel OUT2 config 
+    /**DAC channel OUT2 config
     */
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_DISABLE;
   if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_2) != HAL_OK)
@@ -423,6 +425,71 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void fast_ica(int niter, float epsilon)
+{
+
+  int idx;
+  uint32_t data_width, offset;
+  float tr, det, sqrt, tmp[3];
+  float mean[2], eigvals;
+  float cov[2][2];
+
+  mean = {0, 0};
+
+  for(int i = 0; i < nsamples; i++)
+  {
+    idx = i % buf_size;
+
+    if(idx == 0)
+    {
+      // read to buffer
+      offset = (t / buf_size) * buf_size * sizeof(float);
+      BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+      BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+    }
+
+    mean[0] += (signal[0][idx] - mean[0]) / (i + 1)
+    mean[1] += (signal[1][idx] - mean[1]) / (i + 1);
+  }
+
+  for(int i = 0; i < nsamples; i++)
+  {
+    idx = i % buf_size;
+
+    if(idx == 0)
+    {
+      // read to buffer
+      offset = (t / buf_size) * buf_size * sizeof(float);
+      BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+      BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+    }
+
+    signal[0][idx] -= mean[0];
+    signal[1][idx] -= mean[1];
+    tmp[0] += (signal[0][idx] * signal[0][idx]);
+    tmp[1] += (signal[1][idx] * signal[1][idx]);
+    tmp[2] += (signal[0][idx] * signal[1][idx]);
+  }
+
+  tmp[0] /= (nsamples - 1);
+  tmp[1] /= (nsamples - 1);
+  tmp[2] /= (nsamples - 1);
+
+  // cov = [[tmp[0], tmp[2]],[tmp[2], tmp[1]]]
+
+  // calc eign_val, eign-vec
+
+  // tr = tmp[0] +  tmp[1];
+  // det = tmp[0] *  tmp[1] -  tmp[2] *  tmp[2];
+
+  // arm_sqrt_f32((tr * tr) - (4.0 * det), &sqrt);
+  // eigvals[0] = (tr + sqrt) / 2.0;
+  // eigvals[1] = (tr - sqrt) / 2.0;
+
+
+
+}
+
 /* USER CODE END 4 */
 
 /* StartDefaultTask function */
@@ -430,53 +497,63 @@ void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
-	int wrong, t, read_from_flash, idx;
-	uint32_t offset;
-	float32_t x[2];
-	arm_matrix_instance_f32 matrix_x = {2, 1, x};
-	
-	wrong = 0;	
+	int wrong, t, flash_flag, idx;
+	uint32_t data_width, offset;
+	float32_t s[2], x[2];
+	arm_matrix_instance_f32 matrix_s, matrix_x;
+
+  matrix_x =  = {2, 1, x};
+
+	wrong = 0;
 	t = 0;
-	read_from_flash = 0;
-	
+	flash_flag = 0;
+
   /* Infinite loop */
   for(;;)
   {
     if(tim3_flag)
 		{
+
 			tim3_flag = 0;
-			
+
 			idx = t % buf_size;
-			
-			if(read_from_flash && idx == 0)
+
+			if(flash_flag && idx == 0)
 			{
-				// refresh buffer
-				printf("read buffer\n");
-				offset = (t % buf_size) * buf_size * sizeof(float);
-				BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));
-				BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));				
+				// read to buffer
+				offset = (t / buf_size) * buf_size * sizeof(float);
+				BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+				BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
 			}
-			
-			if(!read_from_flash)
+			else if(!flash_flag)
 			{
 				// calc values
-				
-				signal[0][idx] = 0.10;
-				signal[1][idx] = 0.20;
-				
+
+        s[0] = arm_sin_f32((2 * PI * f[0] * t) / sampling_frequency) + 1;
+        s[1] = arm_sin_f32((2 * PI * f[1] * t) / sampling_frequency) + 1;
+
+        s[0] *= scale_coeff;
+        s[1] *= scale_coeff;
+
+        matrix_s = {2, 1, s};
+        arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
+
+        signal[0][idx] = matrix_x.pData[0]; // x[0]
+        signal[1][idx] = matrix_x.pData[1]; // x[1]
+
 				if(idx == buf_size-1)
 				{
-					printf("write buffer\n");
-					offset = (t % (buf_size-1)) * buf_size * sizeof(float);
-					BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));	
-					BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, (uint32_t)buf_size*sizeof(float));				
+          // write from buffer
+					offset = ((t / (buf_size-1)) - 1) * buf_size * sizeof(float);
+					BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+					BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
 				}
 			}
-			
-			printf("%f\t%d\t%d\n", signal[0][idx], t, read_from_flash);
-			//HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
-			//HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
-			
+
+			printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], t);
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
+			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
+
 			if(++t == nsamples)
 			{
 				read_from_flash = 1;
@@ -484,7 +561,7 @@ void StartDefaultTask(void const * argument)
 			}
 		}
   }
-  /* USER CODE END 5 */ 
+  /* USER CODE END 5 */
 }
 
 /**
@@ -533,7 +610,7 @@ void _Error_Handler(char *file, int line)
   * @retval None
   */
 void assert_failed(uint8_t* file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
