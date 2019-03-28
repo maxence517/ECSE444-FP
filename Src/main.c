@@ -70,14 +70,10 @@ osThreadId defaultTaskHandle;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-int tim3_flag = 0;
-
 const int nsignals = 2;
 const int nsamples = 32000;
 const int buf_size = 100;
 const int ntransfers = nsamples / buf_size;
-float signal[nsignals][buf_size];
-float test_signal[buf_size];
 
 const uint32_t S0_START_ADDR = 0;
 const uint32_t S1_START_ADDR = nsamples * sizeof(float);
@@ -87,8 +83,17 @@ const float f[] = {261.63, 392.0};
 const uint32_t sampling_freq = 16000;
 const int scale_coeff = 50;
 
-const float32_t a[4] = {2, 4, 5, 3};
-const arm_matrix_instance_f32 matrix_a = {2, 2, a};
+float a[4] = {2, 4, 5, 3};
+arm_matrix_instance_f32 matrix_a = {
+	.numRows = 2,
+	.numCols = 2,
+	.pData = a
+};
+
+int tim3_flag = 0;
+
+float signal[nsignals][buf_size];
+float test_signal[buf_size];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -426,68 +431,85 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 void fast_ica(int niter, float epsilon)
-{
+{	
+	int idx, iter;
+	uint32_t offset;
+	float mean[2], tmp[3], cov[4], tr, det, sqrt, eigvals[2];
+	arm_matrix_instance_f32 matrix_cov;
 
-  int idx;
-  uint32_t data_width, offset;
-  float tr, det, sqrt, tmp[3];
-  float mean[2], eigvals;
-  float cov[2][2];
-
-  mean = {0, 0};
-
+  mean[0] = 0.0;
+	mean[1] = 0.0;
   for(int i = 0; i < nsamples; i++)
   {
+		
     idx = i % buf_size;
 
     if(idx == 0)
     {
-      // read to buffer
-      offset = (t / buf_size) * buf_size * sizeof(float);
+      // read to buffer from flash
+      offset = (i / buf_size) * buf_size * sizeof(float);
       BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
       BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
     }
 
-    mean[0] += (signal[0][idx] - mean[0]) / (i + 1)
+		// CMA of signal 0 & 1
+    mean[0] += (signal[0][idx] - mean[0]) / (i + 1);
     mean[1] += (signal[1][idx] - mean[1]) / (i + 1);
   }
 
   for(int i = 0; i < nsamples; i++)
   {
+		
     idx = i % buf_size;
 
     if(idx == 0)
     {
-      // read to buffer
-      offset = (t / buf_size) * buf_size * sizeof(float);
+      // read to buffer from flash
+      offset = (i / buf_size) * buf_size * sizeof(float);
       BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
       BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
     }
 
+		// center values
     signal[0][idx] -= mean[0];
     signal[1][idx] -= mean[1];
-    tmp[0] += (signal[0][idx] * signal[0][idx]);
-    tmp[1] += (signal[1][idx] * signal[1][idx]);
-    tmp[2] += (signal[0][idx] * signal[1][idx]);
+		
+    tmp[0] += (signal[0][idx] * signal[0][idx]); // sum(x_i * x_i)
+    tmp[1] += (signal[1][idx] * signal[1][idx]); // sum(y_i * y_i)
+    tmp[2] += (signal[0][idx] * signal[1][idx]); // sum(x_i * y_i)
   }
 
   tmp[0] /= (nsamples - 1);
   tmp[1] /= (nsamples - 1);
   tmp[2] /= (nsamples - 1);
-
-  // cov = [[tmp[0], tmp[2]],[tmp[2], tmp[1]]]
-
-  // calc eign_val, eign-vec
-
-  // tr = tmp[0] +  tmp[1];
-  // det = tmp[0] *  tmp[1] -  tmp[2] *  tmp[2];
-
-  // arm_sqrt_f32((tr * tr) - (4.0 * det), &sqrt);
-  // eigvals[0] = (tr + sqrt) / 2.0;
-  // eigvals[1] = (tr - sqrt) / 2.0;
-
-
-
+	
+	/*
+	   cov = [[tmp[0], tmp[2]],
+	  				[tmp[2], tmp[1]]]
+	   no need for cov matrix
+	   (using intermediate matrix for clarity)
+	*/
+	cov[0] = tmp[0];
+	cov[1] = tmp[2];
+	cov[2] = tmp[2];
+	cov[3] = tmp[1];
+	
+	// trace of 2x2 matrix
+	tr = cov[0] + cov[3]; 
+	// determinant of 2x2 matrix
+	det = (cov[0] * cov[3]) + (cov[1] * cov[2]);
+	
+	arm_sqrt_f32((tr * tr) - (4.0 * det), &sqrt);
+	eigvals[0] = (tr + sqrt) / 2.0;
+	eigvals[1] = (tr - sqrt) / 2.0;
+	
+	
+	
+	
+	iter = 0;
+	while(iter < niter)
+	{
+	}
 }
 
 /* USER CODE END 4 */
@@ -497,15 +519,20 @@ void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
-	int wrong, t, flash_flag, idx;
-	uint32_t data_width, offset;
+	int i, flash_flag, idx;
+	uint32_t offset;
 	float32_t s[2], x[2];
 	arm_matrix_instance_f32 matrix_s, matrix_x;
 
-  matrix_x =  = {2, 1, x};
+	matrix_s.numRows = 2;
+	matrix_s.numCols = 1;
+	matrix_s.pData = s;
 
-	wrong = 0;
-	t = 0;
+	matrix_x.numRows = 2;
+  matrix_x.numCols = 1;
+	matrix_x.pData = x;
+
+	i = 0;
 	flash_flag = 0;
 
   /* Infinite loop */
@@ -515,49 +542,45 @@ void StartDefaultTask(void const * argument)
 		{
 
 			tim3_flag = 0;
-
-			idx = t % buf_size;
+			idx = i % buf_size;
 
 			if(flash_flag && idx == 0)
 			{
-				// read to buffer
-				offset = (t / buf_size) * buf_size * sizeof(float);
+				// read to buffer from flash
+				offset = (i / buf_size) * buf_size * sizeof(float);
 				BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
 				BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
 			}
 			else if(!flash_flag)
 			{
 				// calc values
-
-        s[0] = arm_sin_f32((2 * PI * f[0] * t) / sampling_frequency) + 1;
-        s[1] = arm_sin_f32((2 * PI * f[1] * t) / sampling_frequency) + 1;
-
+        s[0] = arm_sin_f32((2 * PI * f[0] * i) / sampling_freq) + 1;
+        s[1] = arm_sin_f32((2 * PI * f[1] * i) / sampling_freq) + 1;
         s[0] *= scale_coeff;
         s[1] *= scale_coeff;
-
-        matrix_s = {2, 1, s};
+        
         arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
 
-        signal[0][idx] = matrix_x.pData[0]; // x[0]
-        signal[1][idx] = matrix_x.pData[1]; // x[1]
+        signal[0][idx] = x[0]; 
+        signal[1][idx] = x[1];
 
 				if(idx == buf_size-1)
 				{
-          // write from buffer
-					offset = ((t / (buf_size-1)) - 1) * buf_size * sizeof(float);
+          // write from buffer to flash
+					offset = ((i / (buf_size-1)) - 1) * buf_size * sizeof(float);
 					BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
 					BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
 				}
 			}
 
-			printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], t);
+			printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], i);
 			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
 			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
 
-			if(++t == nsamples)
+			if(++i == nsamples)
 			{
-				read_from_flash = 1;
-				t = 0;
+				flash_flag = 1; // start reading vals from flash
+				i = 0;
 			}
 		}
   }
