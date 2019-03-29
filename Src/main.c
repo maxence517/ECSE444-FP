@@ -434,11 +434,11 @@ void fast_ica(int niter, float epsilon)
 {	
 	int idx, iter;
 	uint32_t offset;
-	float mean[2], tmp[3], cov[4], tr, det, sqrt, eigvals[2];
-	arm_matrix_instance_f32 matrix_cov;
+	float mean[2], tmp[3], cov[2][2], tr, det, sqrt, eigvals[2], ev[2][2][2], eigvec[2][2], eigval[2][2], w[2][2], eig_inv[2][2], inv_tmp, dw[4];
+	arm_matrix_instance_f32 matrix_w, matrix_eval, matrix_dw;
 
-  mean[0] = 0.0;
-	mean[1] = 0.0;
+  mean[0] = 0.0f;
+	mean[1] = 0.0f;
   for(int i = 0; i < nsamples; i++)
   {
 		
@@ -478,34 +478,65 @@ void fast_ica(int niter, float epsilon)
     tmp[1] += (signal[1][idx] * signal[1][idx]); // sum(y_i * y_i)
     tmp[2] += (signal[0][idx] * signal[1][idx]); // sum(x_i * y_i)
   }
-
   tmp[0] /= (nsamples - 1);
   tmp[1] /= (nsamples - 1);
   tmp[2] /= (nsamples - 1);
 	
-	/*
-	   cov = [[tmp[0], tmp[2]],
-	  				[tmp[2], tmp[1]]]
-	   no need for cov matrix
-	   (using intermediate matrix for clarity)
-	*/
-	cov[0] = tmp[0];
-	cov[1] = tmp[2];
-	cov[2] = tmp[2];
-	cov[3] = tmp[1];
+	cov[0][0] = tmp[0];
+	cov[0][1] = tmp[2];
+	cov[1][0] = tmp[2];
+	cov[1][1] = tmp[1];
 	
 	// trace of 2x2 matrix
-	tr = cov[0] + cov[3]; 
+	tr = cov[0][0] + cov[1][1]; 
 	// determinant of 2x2 matrix
-	det = (cov[0] * cov[3]) + (cov[1] * cov[2]);
+	det = (cov[0][0] * cov[1][1]) + (cov[0][1] * cov[1][0]);
 	
-	arm_sqrt_f32((tr * tr) - (4.0 * det), &sqrt);
-	eigvals[0] = (tr + sqrt) / 2.0;
-	eigvals[1] = (tr - sqrt) / 2.0;
+	arm_sqrt_f32((tr * tr) - (4.0f * det), &sqrt);
+	eigvals[0] = (tr + sqrt) / 2.0f;
+	eigvals[1] = (tr - sqrt) / 2.0f;
+	
+	ev[0][0][0] = cov[0][0] - eigvals[0];
+	ev[0][0][1] = cov[0][1];
+	ev[0][1][0] = cov[1][0];
+	ev[0][1][1] = cov[1][1] - eigvals[1];	
+	ev[1][0][0] = cov[0][0] - eigvals[1];
+	ev[1][0][1] = cov[0][1];
+	ev[1][1][0] = cov[1][0];
+	ev[1][1][1] = cov[1][1] - eigvals[1];
+
+	eigvec[0][0] = ev[0][0][0];
+	eigvec[0][1] = ev[1][0][0];
+	eigvec[1][0] = ev[0][1][0];
+	eigvec[1][1] = ev[1][1][0];
+	
+	eigval[0][0] = eigvals[1];
+	eigval[0][1] = 0.0f;
+	eigval[1][0] = 0.0f;
+	eigval[1][1] = eigvals[0];
+	
+	arm_sqrt_f32((eigvec[0][0] * eigvec[0][0]) + (eigvec[0][1] * eigvec[0][1]), &sqrt);
+	eigval[0][0] /= sqrt;
+	eigval[0][1] /= sqrt;
+	arm_sqrt_f32((eigvec[1][0] * eigvec[1][0]) + (eigvec[1][1] * eigvec[1][1]), &sqrt);
+	eigval[1][0] /= sqrt;
+	eigval[1][1] /= sqrt;	
+	
+	arm_sqrt_f32(eigval[0][0],  &eig_inv[0][0]);
+	arm_sqrt_f32(eigval[0][1],  &eig_inv[0][1]);
+	arm_sqrt_f32(eigval[1][0],  &eig_inv[1][0]);
+	arm_sqrt_f32(eigval[1][1],  &eig_inv[1][1]);
+	
+	det = eig_inv[0][0] * eig_inv[1][1] - eig_inv[0][1] * eig_inv[1][0];
+	inv_tmp = eig_inv[0][0];	
+	
+	eig_inv[0][0] = (-1.0 / det) * eig_inv[1][1];
+	eig_inv[0][1] *= (-1.0 / det);
+	eig_inv[1][0] *= (-1.0 / det);
+	eig_inv[1][1] = (1.0 / det) * inv_tmp;
 	
 	
-	
-	
+
 	iter = 0;
 	while(iter < niter)
 	{

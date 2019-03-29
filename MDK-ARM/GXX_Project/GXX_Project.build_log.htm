@@ -27,7 +27,18 @@ Project File Date:  03/28/2019
 <h2>Output:</h2>
 *** Using Compiler 'V5.05 update 2 (build 169)', folder: 'C:\Keil_v5\ARM\ARMCC\Bin'
 Build target 'GXX_Project'
-"GXX_Project\GXX_Project.axf" - 0 Error(s), 0 Warning(s).
+compiling main.c...
+../Src/main.c(438): warning:  #550-D: variable "matrix_w" was set but never used
+        arm_matrix_instance_f32 matrix_w, matrix_dw;
+../Src/main.c(438): warning:  #550-D: variable "matrix_dw" was set but never used
+        arm_matrix_instance_f32 matrix_w, matrix_dw;
+../Src/main.c: 2 warnings, 0 errors
+linking...
+GXX_Project\GXX_Project.axf: Warning: L6988W: Ignoring unknown patch sdcomp-29491-629360.
+Program Size: Code=18800 RO-data=2580 RW-data=152 ZI-data=5648  
+Finished: 0 information, 1 warning and 0 error messages.
+FromELF: creating hex file...
+"GXX_Project\GXX_Project.axf" - 0 Error(s), 3 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -48,8 +59,8 @@ Package Vendor: ARM
    * Component: ARM::CMSIS:CORE:5.1.1
 
    * Component: ARM::CMSIS:DSP:1.5.2
-      Include file:  CMSIS\Include\arm_math.h
       Library file:  CMSIS\Lib\ARM\arm_cortexM4lf_math.lib
+      Include file:  CMSIS\Include\arm_math.h
 </pre>
 </body>
 </html>
