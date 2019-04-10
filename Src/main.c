@@ -87,7 +87,10 @@ const float f[] = {261.63, 392.0};
 const uint32_t sampling_freq = 16000;
 const int scale_coeff = 50;
 
+float ica_fltr[2][2];
 float a[4] = {2, 4, 5, 3};
+float mean[2];
+
 arm_matrix_instance_f32 matrix_a = {
 	.numRows = 2,
 	.numCols = 2,
@@ -96,6 +99,7 @@ arm_matrix_instance_f32 matrix_a = {
 
 int tim3_flag = 0;
 
+//Signals local memory Buffers
 float signal[nsignals][buf_size];
 float signal_w[nsignals][buf_size];
 float signal_x[nsignals][buf_size];
@@ -184,6 +188,8 @@ int main(void)
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+	
+	
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -426,26 +432,40 @@ static void MX_USART1_UART_Init(void)
 */
 static void MX_GPIO_Init(void)
 {
+	
+	  GPIO_InitTypeDef GPIO_InitStruct;
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+	__HAL_RCC_GPIOE_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
-//why niter ? and epsilon ?
 void fast_ica(int niter, float epsilon)
 {	
 	int idx, iter;
 	uint32_t offset;
-	float mean[2], tmp[3], cov[2][2], ica_fltr[2][2], tr, det, sqrt, eigvals[2], ev[2][2][2], eigvec[2][2], eigval[2][2], w[2][2], eig_inv[2][2], inv_tmp, dw[4],matrix_w[2][2], weight[2], old_weight[2], matrix_dw[2][2], vector_dw[2][2], basis_set[2][2];
-	
-	//If we want to use the built-in function
-	//arm_matrix_instance_f32 matrix_w, matrix_eval, matrix_dw; 
+	float tmp[3], cov[2][2], tr, det, sqrt, eigvals[2], ev[2][2][2], eigvec[2][2], eigval[2][2], w[2][2], eig_inv[2][2], inv_tmp, dw[4],matrix_w[2][2], weight[2], old_weight[2], matrix_dw[2][2], vector_dw[2][2], basis_set[2][2];
 
-	
 	// Compute the mean
   mean[0] = 0.0f;
 	mean[1] = 0.0f;
@@ -726,13 +746,43 @@ void fast_ica(int niter, float epsilon)
 }
 
 /* USER CODE END 4 */
+// Apply filter by multiplying the ica filter with the Signal and write the result in the buffer.
+void filter(void){
+	int idx;
+	uint32_t offset;
+	
+	for(int i = 0; i < nsamples; i++)
+  {
+    idx = i % buf_size;
+
+    if(idx == 0)
+    {
+      // Read to buffer from flash
+      offset = (i / buf_size) * buf_size * sizeof(float);
+      BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+      BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+    }
+		
+		// Apply FastICA filter and add mean that was substracted 
+		signal_w[0][idx] = ica_fltr[0][0] * (signal[0][idx] + mean[0]) + ica_fltr[0][1] * (signal[1][idx] + mean[1]);
+    signal_w[1][idx] = ica_fltr[1][0] * (signal[0][idx] + mean[0]) + ica_fltr[1][1] * (signal[1][idx] + mean[1]);
+		
+		// Write the resulting filter to QSPI overwritting signal_w
+		if(idx == buf_size -1){
+			offset = ((i / (buf_size-1)) - 1) * buf_size * sizeof(float);
+			BSP_QSPI_Write((uint8_t *)signal_w[0], S0W_START_ADDR + offset, DATA_WIDTH);
+			BSP_QSPI_Write((uint8_t *)signal_w[1], S1W_START_ADDR + offset, DATA_WIDTH);
+		}
+  }
+}
 
 /* StartDefaultTask function */
 void StartDefaultTask(void const * argument)
 {
 
   /* USER CODE BEGIN 5 */
-	int i, flash_flag, idx;
+	int i, flash_flag, idx, stage;
+	stage = 0;
 	uint32_t offset;
 	float32_t s[2], x[2];
 	arm_matrix_instance_f32 matrix_s, matrix_x;
@@ -747,55 +797,100 @@ void StartDefaultTask(void const * argument)
 
 	i = 0;
 	flash_flag = 0;
-
+	
+	//Set Stage light to off
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
   /* Infinite loop */
   for(;;)
-  {
-    if(tim3_flag)
-		{
-
-			tim3_flag = 0;
-			idx = i % buf_size;
-
-			if(flash_flag && idx == 0)
-			{
-				// read to buffer from flash
-				offset = (i / buf_size) * buf_size * sizeof(float);
-				BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
-				BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
-			}
-			else if(!flash_flag)
-			{
-				// calc values
-        s[0] = arm_sin_f32((2 * PI * f[0] * i) / sampling_freq) + 1;
-        s[1] = arm_sin_f32((2 * PI * f[1] * i) / sampling_freq) + 1;
-        s[0] *= scale_coeff;
-        s[1] *= scale_coeff;
-        
-        arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
-
-        signal[0][idx] = x[0]; 
-        signal[1][idx] = x[1];
-
-				if(idx == buf_size-1)
+  {	
+		//STAGE CONTROL
+		if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == HAL_OK){
+			stage += 1;
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
+		}
+		
+		// STAGE 1 : On press generate the mix matrix
+		// TODO : REVIEW INPUT
+		if(stage == 1){ 
+			printf("----------------- Stage 1 ----------------------");
+			for(int i = 0; i < 32000; i++){
+				if(tim3_flag)
 				{
-          // write from buffer to flash
-					offset = ((i / (buf_size-1)) - 1) * buf_size * sizeof(float);
-					BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
-					BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+
+					tim3_flag = 0;
+					idx = i % buf_size;
+
+					if(flash_flag && idx == 0)
+					{
+						// read to buffer from flash
+						offset = (i / buf_size) * buf_size * sizeof(float);
+						BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+						BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+					}
+					else if(!flash_flag)
+					{
+						// calc values
+						s[0] = arm_sin_f32((2 * PI * f[0] * i) / sampling_freq) + 1;
+						s[1] = arm_sin_f32((2 * PI * f[1] * i) / sampling_freq) + 1;
+						s[0] *= scale_coeff;
+						s[1] *= scale_coeff;
+						
+						arm_mat_mult_f32(&matrix_a, &matrix_s, &matrix_x);
+
+						signal[0][idx] = x[0]; 
+						signal[1][idx] = x[1];
+
+						if(idx == buf_size-1)
+						{
+							// write from buffer to flash
+							offset = ((i / (buf_size-1)) - 1) * buf_size * sizeof(float);
+							BSP_QSPI_Write((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+							BSP_QSPI_Write((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+						}
+					}
+
+					printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], i);
+					HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
+					HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
+
+					if(++i == nsamples)
+					{
+						flash_flag = 1; // start reading vals from flash
+						i = 0;
+					}
 				}
 			}
-
-			printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], i);
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
-			HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
-
-			if(++i == nsamples)
-			{
-				flash_flag = 1; // start reading vals from flash
-				i = 0;
-			}
+			// Set stage light to off
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
 		}
+		
+		// STAGE 2 : Generate the Weight Matrix using fast ica
+		if(stage == 2){
+			printf("----------------- Stage 2 ----------------------");
+			fast_ica(1000, 0.0001);
+			
+			// Set stage light to off
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
+		}
+		
+		// STAGE 3 : Use Weight Matrix to get the original sine waves (Reuse the Memory)
+		if(stage == 3){
+			printf("----------------- Stage 3 ----------------------");
+			filter();
+			
+			// Set stage light to off
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
+		}
+		//TODO
+		// STAGE 4 : Compare the two result
+		if(stage == 4){
+			printf("----------------- Stage 4 ----------------------");
+		
+			
+			// Set stage light to off
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
+		}
+		
   }
   /* USER CODE END 5 */
 }
