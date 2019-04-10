@@ -77,6 +77,10 @@ const int ntransfers = nsamples / buf_size;
 
 const uint32_t S0_START_ADDR = 0;
 const uint32_t S1_START_ADDR = nsamples * sizeof(float);
+const uint32_t S0W_START_ADDR = nsamples * sizeof(float) + S1_START_ADDR;
+const uint32_t S1W_START_ADDR = nsamples * sizeof(float) + S0W_START_ADDR;
+
+
 const uint32_t DATA_WIDTH = (uint32_t)buf_size*sizeof(float);
 
 const float f[] = {261.63, 392.0};
@@ -93,6 +97,8 @@ arm_matrix_instance_f32 matrix_a = {
 int tim3_flag = 0;
 
 float signal[nsignals][buf_size];
+float signal_w[nsignals][buf_size];
+float signal_x[nsignals][buf_size];
 float test_signal[buf_size];
 /* USER CODE END PV */
 
@@ -429,14 +435,18 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+//why niter ? and epsilon ?
 void fast_ica(int niter, float epsilon)
 {	
 	int idx, iter;
 	uint32_t offset;
-	float mean[2], tmp[3], cov[2][2], tr, det, sqrt, eigvals[2], ev[2][2][2], eigvec[2][2], eigval[2][2], w[2][2], eig_inv[2][2], inv_tmp, dw[4];
-	arm_matrix_instance_f32 matrix_w, matrix_eval, matrix_dw;
+	float mean[2], tmp[3], cov[2][2], ica_fltr[2][2], tr, det, sqrt, eigvals[2], ev[2][2][2], eigvec[2][2], eigval[2][2], w[2][2], eig_inv[2][2], inv_tmp, dw[4],matrix_w[2][2], weight[2], old_weight[2], matrix_dw[2][2], vector_dw[2][2], basis_set[2][2];
+	
+	//If we want to use the built-in function
+	//arm_matrix_instance_f32 matrix_w, matrix_eval, matrix_dw; 
 
+	
+	// Compute the mean
   mean[0] = 0.0f;
 	mean[1] = 0.0f;
   for(int i = 0; i < nsamples; i++)
@@ -456,7 +466,7 @@ void fast_ica(int niter, float epsilon)
     mean[0] += (signal[0][idx] - mean[0]) / (i + 1);
     mean[1] += (signal[1][idx] - mean[1]) / (i + 1);
   }
-
+	
   for(int i = 0; i < nsamples; i++)
   {
 		
@@ -478,69 +488,191 @@ void fast_ica(int niter, float epsilon)
     tmp[1] += (signal[1][idx] * signal[1][idx]); // sum(y_i * y_i)
     tmp[2] += (signal[0][idx] * signal[1][idx]); // sum(x_i * y_i)
   }
-  tmp[0] /= (nsamples - 1);
+	// Obtain Variance and Covariance Matrice
+  tmp[0] /= (nsamples - 1); // Why minus 1
   tmp[1] /= (nsamples - 1);
   tmp[2] /= (nsamples - 1);
+	
 	
 	cov[0][0] = tmp[0];
 	cov[0][1] = tmp[2];
 	cov[1][0] = tmp[2];
 	cov[1][1] = tmp[1];
 	
+	// Find eigenvector and eigen value of the Covariance 
+	
 	// trace of 2x2 matrix
 	tr = cov[0][0] + cov[1][1]; 
 	// determinant of 2x2 matrix
-	det = (cov[0][0] * cov[1][1]) + (cov[0][1] * cov[1][0]);
+	det = (cov[0][0] * cov[1][1]) - (cov[0][1] * cov[1][0]); 
 	
 	arm_sqrt_f32((tr * tr) - (4.0f * det), &sqrt);
 	eigvals[0] = (tr + sqrt) / 2.0f;
 	eigvals[1] = (tr - sqrt) / 2.0f;
 	
+	//EV1
 	ev[0][0][0] = cov[0][0] - eigvals[0];
 	ev[0][0][1] = cov[0][1];
 	ev[0][1][0] = cov[1][0];
 	ev[0][1][1] = cov[1][1] - eigvals[1];	
+	//EV2
 	ev[1][0][0] = cov[0][0] - eigvals[1];
 	ev[1][0][1] = cov[0][1];
 	ev[1][1][0] = cov[1][0];
 	ev[1][1][1] = cov[1][1] - eigvals[1];
+	
 
 	eigvec[0][0] = ev[0][0][0];
 	eigvec[0][1] = ev[1][0][0];
 	eigvec[1][0] = ev[0][1][0];
 	eigvec[1][1] = ev[1][1][0];
 	
+	//Diagonal Matrice of Eigen Values
 	eigval[0][0] = eigvals[1];
 	eigval[0][1] = 0.0f;
 	eigval[1][0] = 0.0f;
 	eigval[1][1] = eigvals[0];
 	
+	//Divide by norm : eigvec = eigvec / np.linalg.norm(eigvec, axis=0)
 	arm_sqrt_f32((eigvec[0][0] * eigvec[0][0]) + (eigvec[0][1] * eigvec[0][1]), &sqrt);
-	eigval[0][0] /= sqrt;
-	eigval[0][1] /= sqrt;
+	eigvec[0][0] /= sqrt;
+	eigvec[0][1] /= sqrt;
 	arm_sqrt_f32((eigvec[1][0] * eigvec[1][0]) + (eigvec[1][1] * eigvec[1][1]), &sqrt);
-	eigval[1][0] /= sqrt;
-	eigval[1][1] /= sqrt;	
+	eigvec[1][0] /= sqrt;
+	eigvec[1][1] /= sqrt;	
 	
+	//De-Whitening
 	arm_sqrt_f32(eigval[0][0],  &eig_inv[0][0]);
 	arm_sqrt_f32(eigval[0][1],  &eig_inv[0][1]);
 	arm_sqrt_f32(eigval[1][0],  &eig_inv[1][0]);
 	arm_sqrt_f32(eigval[1][1],  &eig_inv[1][1]);
 	
-	det = eig_inv[0][0] * eig_inv[1][1] - eig_inv[0][1] * eig_inv[1][0];
-	inv_tmp = eig_inv[0][0];	
+	matrix_dw[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[1][0];
+	matrix_dw[0][1] = eig_inv[0][0] * eigvec[0][1] + eig_inv[0][1] * eigvec[1][1];
+	matrix_dw[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[1][0];
+	matrix_dw[1][1] = eig_inv[1][0] * eigvec[0][1] + eig_inv[1][1] * eigvec[1][1];
 	
-	eig_inv[0][0] = (-1.0 / det) * eig_inv[1][1];
-	eig_inv[0][1] *= (-1.0 / det);
-	eig_inv[1][0] *= (-1.0 / det);
+	//Whitening
+	
+	det = eig_inv[0][0] * eig_inv[1][1] - eig_inv[0][1] * eig_inv[1][0];
+	inv_tmp = eig_inv[0][0];
+	
+	
+	eig_inv[0][0] = (1.0 / det) * eig_inv[1][1];
+	eig_inv[0][1] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//
+	eig_inv[1][0] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//
 	eig_inv[1][1] = (1.0 / det) * inv_tmp;
 	
+	matrix_w[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[0][1];
+	matrix_w[0][1] = eig_inv[0][0] * eigvec[1][0] + eig_inv[0][1] * eigvec[1][1];
+	matrix_w[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[0][1];
+	matrix_w[1][1] = eig_inv[1][0] * eigvec[1][0] + eig_inv[1][1] * eigvec[1][1];
 	
+	// Apply whitening to center matrice 
+	for(int i = 0; i < nsamples; i++)
+  {
+		
+    idx = i % buf_size;
 
+    if(idx == 0)
+    {
+      // read to buffer from flash
+      offset = (i / buf_size) * buf_size * sizeof(float);
+      BSP_QSPI_Read((uint8_t *)signal[0], S0_START_ADDR + offset, DATA_WIDTH);
+      BSP_QSPI_Read((uint8_t *)signal[1], S1_START_ADDR + offset, DATA_WIDTH);
+    }
+
+		// center values
+    signal[0][idx] -= mean[0];
+    signal[1][idx] -= mean[1];
+		
+		// Whitening Center Signals
+		signal_w[0][idx] = matrix_w[0][0] * signal[0][idx] + matrix_w[0][1] * signal[1][idx];
+    signal_w[1][idx] = matrix_w[1][0] * signal[0][idx] + matrix_w[1][1] * signal[1][idx];
+		
+		//Write the new 2 x 32 000 to the QSPI
+		if(idx == buf_size -1){
+			offset = ((i / (buf_size-1)) - 1) * buf_size * sizeof(float);
+			BSP_QSPI_Write((uint8_t *)signal_w[0], S0W_START_ADDR + offset, DATA_WIDTH);
+			BSP_QSPI_Write((uint8_t *)signal_w[1], S1W_START_ADDR + offset, DATA_WIDTH);
+		}
+  }
+	
+	// Initialize random weight
+	weight[0] = 5;
+	weight[1] = 10;
+	
+	// Normalize the weight
+	weight[0] = 5/15;
+	weight[1] = 10/15;
+	
+	// History of matrices
+	old_weight[0] = 0;
+	old_weight[1] = 0;
+	
 	iter = 0;
 	while(iter < niter)
 	{
+		//Test for convergence
+		float norm1, norm2;
+		arm_sqrt_f32((weight[0]- old_weight[0]) * (weight[0]- old_weight[0])  + (weight[1] - old_weight[1])*(weight[1] - old_weight[1]),  &norm1);
+		arm_sqrt_f32((weight[0]- old_weight[0]) * (weight[0]- old_weight[0])  + (weight[1] - old_weight[1])*(weight[1] - old_weight[1]),  &norm2);
+		
+		if( norm1 < epsilon || norm2 < epsilon){
+			printf("Converge");
+			break;
+		}
+		
+		// update old weight
+		old_weight[0] = weight[0];
+		old_weight[1] = weight[1];
+		
+		// update weight
+		for(int i = 0; i < nsamples; i++){
+		
+			idx = i % buf_size;
+
+			if(idx == 0)
+			{
+				// read Whiten Center signal to buffer from flash
+				offset = (i / buf_size) * buf_size * sizeof(float);
+				BSP_QSPI_Read((uint8_t *)signal_w[0], S0W_START_ADDR + offset, DATA_WIDTH);
+				BSP_QSPI_Read((uint8_t *)signal_w[1], S1W_START_ADDR + offset, DATA_WIDTH);
+			}
+		
+			// Equivalent of : weight = (white_mat * np.power(white_mat.T * weight, 3)) / num_sample - 3 * weight
+			
+			signal_x[0][idx] = pow(signal_w[0][idx] * weight[0] + signal_w[1][idx] * weight[1], 3);
+			
+			signal_x[1][0] += signal_w[0][idx] * signal_x[0][idx];
+			signal_x[1][1] += signal_w[1][idx] * signal_x[0][idx];
+			
+			if(idx == buf_size -1){
+				weight[0] += signal_x[1][0] / (buf_size -1) - weight[0]*3 ;
+				weight[1] += signal_x[1][1] / (buf_size -1) - weight[1]*3 ;
+			}
+		}
+		// Normalize Weight
+		weight[0] = weight[0]/pow((pow(weight[0],2) + pow(weight[1],2)), 1/2);
+		weight[1] = weight[1]/pow((pow(weight[0],2) + pow(weight[1],2)), 1/2);
 	}
+	// basis_set[:, 0] = weight
+	basis_set[0][0] = weight[0];
+	basis_set[0][1] = weight[1];
+	//basis_set[:, 1] = np.matrix([[0,-1], [1,0]]) * weight 
+	basis_set[1][0] = - weight[1];
+	basis_set[1][1] = weight[0];
+	
+	vector_dw[0][0] = matrix_dw[0][0] * basis_set[0][0] + matrix_dw[0][1] * basis_set[1][0];
+	vector_dw[0][1] = matrix_dw[0][0] * basis_set[0][1] + matrix_dw[0][1] * basis_set[1][1];
+	vector_dw[1][0] = matrix_dw[1][0] * basis_set[0][0] + matrix_dw[1][1] * basis_set[1][0];
+	vector_dw[1][1] = matrix_dw[1][0] * basis_set[0][1] + matrix_dw[1][1] * basis_set[1][1];
+	
+	ica_fltr[0][0] = basis_set[0][0] * matrix_w[0][0] + basis_set[1][0] * matrix_w[1][0];
+	ica_fltr[0][1] = basis_set[0][0] * matrix_w[0][1] + basis_set[1][0] * matrix_w[1][1];
+	ica_fltr[1][0] = basis_set[0][1] * matrix_w[0][0] + basis_set[1][1] * matrix_w[1][0];
+	ica_fltr[1][1] = basis_set[0][1] * matrix_w[0][1] + basis_set[1][1] * matrix_w[1][1];
+	
 }
 
 /* USER CODE END 4 */
