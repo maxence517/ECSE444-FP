@@ -488,6 +488,10 @@ void fast_ica(int niter, float epsilon)
     tmp[1] += (signal[1][idx] * signal[1][idx]); // sum(y_i * y_i)
     tmp[2] += (signal[0][idx] * signal[1][idx]); // sum(x_i * y_i)
   }
+	
+	// cov_mat
+	// [ tmp0 tmp2 ]
+	// [ tmp2 tmp1 ]
 	// Obtain Variance and Covariance Matrice
   tmp[0] /= (nsamples - 1); // Why minus 1
   tmp[1] /= (nsamples - 1);
@@ -521,52 +525,98 @@ void fast_ica(int niter, float epsilon)
 	ev[1][1][0] = cov[1][0];
 	ev[1][1][1] = cov[1][1] - eigvals[1];
 	
-
-	eigvec[0][0] = ev[0][0][0];
-	eigvec[0][1] = ev[1][0][0];
-	eigvec[1][0] = ev[0][1][0];
-	eigvec[1][1] = ev[1][1][0];
+	// [ cov[0][0]-eigval1	cov[0][0]-eigval2 ]
+	// [ cov[1][0]-0				cov[1][0]-0				]
+	eigvec[0][0] = ev[0][0][0];	// cov[0][0] - eigvals[0]
+	eigvec[0][1] = ev[1][0][0];	// cov[0][0] - eigvals[1];
+	eigvec[1][0] = ev[0][1][0];	// cov[1][0]
+	eigvec[1][1] = ev[1][1][0];	// cov[1][0]
 	
 	//Diagonal Matrice of Eigen Values
+	// [ eigval2	0				]
+	// [ 0				eigval1 ]
 	eigval[0][0] = eigvals[1];
 	eigval[0][1] = 0.0f;
 	eigval[1][0] = 0.0f;
 	eigval[1][1] = eigvals[0];
 	
-	//Divide by norm : eigvec = eigvec / np.linalg.norm(eigvec, axis=0)
-	arm_sqrt_f32((eigvec[0][0] * eigvec[0][0]) + (eigvec[0][1] * eigvec[0][1]), &sqrt);
+	// Divide by norm : eigvec = eigvec / np.linalg.norm(eigvec, axis=0)
+	// ***ERROR CORRECTED
+	// assume eigvec is
+	// [ a b ]
+	// [ c d ]
+	// np.linalg.norm(eigvec, axis=0) returns
+	// [sqrt(a^2+c^2), sqrt(b^2+d^2)]
+	//
+	// eigvec / np.linalg.norm(eigvec, axis=0) returns
+	// [ a/sqrt(a^2+c^2)	b/sqrt(b^2+d^2) ]
+	// [ c/sqrt(a^2+c^2)	c/sqrt(b^2+d^2) ]
+	
+	//-------------OLD CODE-------------//
+	//arm_sqrt_f32((eigvec[0][0] * eigvec[0][0]) + (eigvec[0][1] * eigvec[0][1]), &sqrt);
+	//eigvec[0][0] /= sqrt;
+	//eigvec[0][1] /= sqrt;
+	//arm_sqrt_f32((eigvec[1][0] * eigvec[1][0]) + (eigvec[1][1] * eigvec[1][1]), &sqrt);
+	//eigvec[1][0] /= sqrt;
+	//eigvec[1][1] /= sqrt;	
+	//----------------------------------//
+	arm_sqrt_f32((eigvec[0][0] * eigvec[0][0]) + (eigvec[1][0] * eigvec[1][0]), &sqrt);
 	eigvec[0][0] /= sqrt;
-	eigvec[0][1] /= sqrt;
-	arm_sqrt_f32((eigvec[1][0] * eigvec[1][0]) + (eigvec[1][1] * eigvec[1][1]), &sqrt);
 	eigvec[1][0] /= sqrt;
-	eigvec[1][1] /= sqrt;	
+	arm_sqrt_f32((eigvec[0][1] * eigvec[0][1]) + (eigvec[1][1] * eigvec[1][1]), &sqrt);
+	eigvec[0][1] /= sqrt;
+	eigvec[1][1] /= sqrt;
 	
 	//De-Whitening
+	// np.sqrt(eig_val)
+	// since eig_val is in form of
+	// [ a 0 ]
+	// [ 0 b ]
+	// where a = eigval2 and b = eigval1
 	arm_sqrt_f32(eigval[0][0],  &eig_inv[0][0]);
-	arm_sqrt_f32(eigval[0][1],  &eig_inv[0][1]);
-	arm_sqrt_f32(eigval[1][0],  &eig_inv[1][0]);
+	arm_sqrt_f32(eigval[0][1],  &eig_inv[0][1]);	// is always 0
+	arm_sqrt_f32(eigval[1][0],  &eig_inv[1][0]);	// is always 0
 	arm_sqrt_f32(eigval[1][1],  &eig_inv[1][1]);
 	
-	matrix_dw[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[1][0];
-	matrix_dw[0][1] = eig_inv[0][0] * eigvec[0][1] + eig_inv[0][1] * eigvec[1][1];
-	matrix_dw[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[1][0];
-	matrix_dw[1][1] = eig_inv[1][0] * eigvec[0][1] + eig_inv[1][1] * eigvec[1][1];
+	// dewhitening_mat = eig_vec * np.sqrt(eig_val)
+	// [ vec00 vec01 ]	[	inv00 inv01 ]
+	// [ vec10 vec11 ]	[ inv10 inv11 ]
+	// where inv01 = 0 and inv10 = 0
+	//-------------OLD CODE-------------//
+	//matrix_dw[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[1][0];
+	//matrix_dw[0][1] = eig_inv[0][0] * eigvec[0][1] + eig_inv[0][1] * eigvec[1][1];
+	//matrix_dw[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[1][0];
+	//matrix_dw[1][1] = eig_inv[1][0] * eigvec[0][1] + eig_inv[1][1] * eigvec[1][1];
+	//-------------OLD CODE-------------//
+	// ***CORRECTED
+	matrix_dw[0][0] = eigvec[0][0] * eig_inv[0][0] + eigvec[0][1] * eig_inv[1][0];	// eigvec[0][0] * eig_inv[0][0] <- inv10 = 0
+	matrix_dw[0][1] = eigvec[0][0] * eig_inv[0][1] + eigvec[0][1] * eig_inv[1][1];	// eigvec[0][1] * eig_inv[1][1] <- inv01 = 0
+	matrix_dw[1][0] = eigvec[1][0] * eig_inv[0][0] + eigvec[1][1] * eig_inv[1][0];	// eigvec[1][0] * eig_inv[0][0] <- inv10 = 0
+	matrix_dw[1][1] = eigvec[1][0] * eig_inv[0][1] + eigvec[1][1] * eig_inv[1][1];	// eigvec[1][1] * eig_inv[1][1] <- inv01 = 0
 	
 	//Whitening
 	
+	// eig_inv[0][0] * eig_inv[1][1] is enough since the second term is 0
 	det = eig_inv[0][0] * eig_inv[1][1] - eig_inv[0][1] * eig_inv[1][0];
+	
+	// np.linalg.inv(np.sqrt(eig_val))
 	inv_tmp = eig_inv[0][0];
-	
-	
 	eig_inv[0][0] = (1.0 / det) * eig_inv[1][1];
-	eig_inv[0][1] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//
-	eig_inv[1][0] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//
+	eig_inv[0][1] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//	is 0
+	eig_inv[1][0] *= (-1.0 / det); //** Technically not necessary because of diagonal matrice **//	is 0
 	eig_inv[1][1] = (1.0 / det) * inv_tmp;
+
+	// whitening_mat
+	// [ inv00 inv01 ]	[ vec00 vec10 ] 
+	// [ inv10 inv11 ]	[ vec01 vec11 ]
+	matrix_w[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[0][1];	// eig_inv[0][0] * eigvec[0][0] + 0
+	matrix_w[0][1] = eig_inv[0][0] * eigvec[1][0] + eig_inv[0][1] * eigvec[1][1];	// eig_inv[0][0] * eigvec[1][0] + 0
+	matrix_w[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[0][1];	// 0 + eig_inv[1][1] * eigvec[0][1]
+	matrix_w[1][1] = eig_inv[1][0] * eigvec[1][0] + eig_inv[1][1] * eigvec[1][1]; // 0 + eig_inv[1][1] * eigvec[1][1]
 	
-	matrix_w[0][0] = eig_inv[0][0] * eigvec[0][0] + eig_inv[0][1] * eigvec[0][1];
-	matrix_w[0][1] = eig_inv[0][0] * eigvec[1][0] + eig_inv[0][1] * eigvec[1][1];
-	matrix_w[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[0][1];
-	matrix_w[1][1] = eig_inv[1][0] * eigvec[1][0] + eig_inv[1][1] * eigvec[1][1];
+	
+	
+	//----------didn't check the rest yet, will go over later-----------------------------------------------//
 	
 	// Apply whitening to center matrice 
 	for(int i = 0; i < nsamples; i++)
