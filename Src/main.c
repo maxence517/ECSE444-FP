@@ -167,7 +167,9 @@ int main(void)
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
 	BSP_QSPI_Init();
-	BSP_QSPI_Erase_Chip();
+	if(BSP_QSPI_Erase_Chip()!=QSPI_OK) printf("Error erasing chip");
+	if(BSP_QSPI_Erase_Chip()==QSPI_OK) printf("chip erased successfully");
+	
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
   /* USER CODE END 2 */
@@ -634,10 +636,6 @@ void fast_ica(int niter, float epsilon)
 	matrix_w[1][0] = eig_inv[1][0] * eigvec[0][0] + eig_inv[1][1] * eigvec[0][1];	// 0 + eig_inv[1][1] * eigvec[0][1]
 	matrix_w[1][1] = eig_inv[1][0] * eigvec[1][0] + eig_inv[1][1] * eigvec[1][1]; // 0 + eig_inv[1][1] * eigvec[1][1]
 	
-	
-	
-	//----------didn't check the rest yet, will go over later-----------------------------------------------//
-	
 	// Apply whitening to center matrice 
 	for(int i = 0; i < nsamples; i++)
   {
@@ -657,6 +655,7 @@ void fast_ica(int niter, float epsilon)
     signal[1][idx] -= mean[1];
 		
 		// Whitening Center Signals
+		// white_mat
 		signal_w[0][idx] = matrix_w[0][0] * signal[0][idx] + matrix_w[0][1] * signal[1][idx];
     signal_w[1][idx] = matrix_w[1][0] * signal[0][idx] + matrix_w[1][1] * signal[1][idx];
 		
@@ -668,10 +667,10 @@ void fast_ica(int niter, float epsilon)
 		}
   }
 	
+	// values working
 	// Initialize random weight
 	weight[0] = 5;
 	weight[1] = 10;
-	
 	// Normalize the weight
 	weight[0] = 5/15;
 	weight[1] = 10/15;
@@ -686,10 +685,10 @@ void fast_ica(int niter, float epsilon)
 		//Test for convergence
 		float norm1, norm2;
 		arm_sqrt_f32((weight[0]- old_weight[0]) * (weight[0]- old_weight[0])  + (weight[1] - old_weight[1])*(weight[1] - old_weight[1]),  &norm1);
-		arm_sqrt_f32((weight[0]- old_weight[0]) * (weight[0]- old_weight[0])  + (weight[1] - old_weight[1])*(weight[1] - old_weight[1]),  &norm2);
+		arm_sqrt_f32((weight[0]+ old_weight[0]) * (weight[0]+ old_weight[0])  + (weight[1] + old_weight[1])*(weight[1] + old_weight[1]),  &norm2);
 		
 		if( norm1 < epsilon || norm2 < epsilon){
-			printf("Converge");
+			printf("Converge\n");
 			break;
 		}
 		
@@ -711,33 +710,54 @@ void fast_ica(int niter, float epsilon)
 			}
 		
 			// Equivalent of : weight = (white_mat * np.power(white_mat.T * weight, 3)) / num_sample - 3 * weight
-			
+			// np.power(white_mat.T * weight, 3)
+			// [num_sample x 2]	[2 x 1] -> white_mat.T * weight is a [num_sample x 1] matrix
 			signal_x[0][idx] = pow(signal_w[0][idx] * weight[0] + signal_w[1][idx] * weight[1], 3);
 			
+			// white_mat * np.power(white_mat.T * weight, 3) -> [2x1] matrix
 			signal_x[1][0] += signal_w[0][idx] * signal_x[0][idx];
 			signal_x[1][1] += signal_w[1][idx] * signal_x[0][idx];
 			
 			if(idx == buf_size -1){
-				weight[0] += signal_x[1][0] / (buf_size -1) - weight[0]*3 ;
-				weight[1] += signal_x[1][1] / (buf_size -1) - weight[1]*3 ;
+				weight[0] += signal_x[1][0]; // / (buf_size -1) - weight[0]*3 ;
+				weight[1] += signal_x[1][1]; // / (buf_size -1) - weight[1]*3 ;
 			}
 		}
+		weight[0] = weight[0]/nsamples - old_weight[0] * 3;
+		weight[1] = weight[1]/nsamples - old_weight[1] * 3;
+		
 		// Normalize Weight
 		weight[0] = weight[0]/pow((pow(weight[0],2) + pow(weight[1],2)), 1/2);
 		weight[1] = weight[1]/pow((pow(weight[0],2) + pow(weight[1],2)), 1/2);
 	}
+	
 	// basis_set[:, 0] = weight
-	basis_set[0][0] = weight[0];
-	basis_set[0][1] = weight[1];
+	// assume weight is
+	// [ a ]
+	// [ b ]
+	// basis_set[:, 0] = weight returns
+	// [ a 0 ]
+	// [ b 0 ]
+	//------------------OLD CODE------------------//
+	//basis_set[0][0] = weight[0];
+	//basis_set[0][1] = weight[1];
 	//basis_set[:, 1] = np.matrix([[0,-1], [1,0]]) * weight 
-	basis_set[1][0] = - weight[1];
+	//basis_set[1][0] = - weight[1];
+	//basis_set[1][1] = weight[0];
+	//------------------OLD CODE------------------//
+	basis_set[0][0] = weight[0];
+	basis_set[1][0] = weight[1];
+	
+	basis_set[0][1] = -weight[1];
 	basis_set[1][1] = weight[0];
 	
+	// dewhitening_mat (2x2) * basis_set (2x2)
 	vector_dw[0][0] = matrix_dw[0][0] * basis_set[0][0] + matrix_dw[0][1] * basis_set[1][0];
 	vector_dw[0][1] = matrix_dw[0][0] * basis_set[0][1] + matrix_dw[0][1] * basis_set[1][1];
 	vector_dw[1][0] = matrix_dw[1][0] * basis_set[0][0] + matrix_dw[1][1] * basis_set[1][0];
 	vector_dw[1][1] = matrix_dw[1][0] * basis_set[0][1] + matrix_dw[1][1] * basis_set[1][1];
 	
+	// basis_set.T * whitening_mat
 	ica_fltr[0][0] = basis_set[0][0] * matrix_w[0][0] + basis_set[1][0] * matrix_w[1][0];
 	ica_fltr[0][1] = basis_set[0][0] * matrix_w[0][1] + basis_set[1][0] * matrix_w[1][1];
 	ica_fltr[1][0] = basis_set[0][1] * matrix_w[0][0] + basis_set[1][1] * matrix_w[1][0];
@@ -764,8 +784,10 @@ void filter(void){
     }
 		
 		// Apply FastICA filter and add mean that was substracted 
-		signal_w[0][idx] = ica_fltr[0][0] * (signal[0][idx] + mean[0]) + ica_fltr[0][1] * (signal[1][idx] + mean[1]);
-    signal_w[1][idx] = ica_fltr[1][0] * (signal[0][idx] + mean[0]) + ica_fltr[1][1] * (signal[1][idx] + mean[1]);
+		//signal_w[0][idx] = ica_fltr[0][0] * (signal[0][idx] + mean[0]) + ica_fltr[0][1] * (signal[1][idx] + mean[1]);
+    //signal_w[1][idx] = ica_fltr[1][0] * (signal[0][idx] + mean[0]) + ica_fltr[1][1] * (signal[1][idx] + mean[1]);
+		signal_w[0][idx] = ica_fltr[0][0] * signal[0][idx] + ica_fltr[0][1] * signal[1][idx];
+    signal_w[1][idx] = ica_fltr[1][0] * signal[0][idx] + ica_fltr[1][1] * signal[1][idx];
 		
 		// Write the resulting filter to QSPI overwritting signal_w
 		if(idx == buf_size -1){
@@ -800,19 +822,25 @@ void StartDefaultTask(void const * argument)
 	
 	//Set Stage light to off
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
+	
+	printf("----------------- Stage 0 : Initialization DONE ----------------------\n");
   /* Infinite loop */
   for(;;)
   {	
+		
 		//STAGE CONTROL
 		if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == HAL_OK){
 			stage += 1;
+			if(stage == 6) stage = 1;
 			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
 		}
+		
 		
 		// STAGE 1 : On press generate the mix matrix
 		// TODO : REVIEW INPUT
 		if(stage == 1){ 
-			printf("----------------- Stage 1 ----------------------");
+			printf("----------------- Stage 1 : GENERATE MIX WAVES ----------------------\n");
+
 			for(int i = 0; i < 32000; i++){
 				if(tim3_flag)
 				{
@@ -849,7 +877,7 @@ void StartDefaultTask(void const * argument)
 						}
 					}
 
-					printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], i);
+					//printf("%f\t%f\t%d\n", signal[0][idx], signal[1][idx], i);
 					HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_8B_R, signal[0][idx]);
 					HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_8B_R, signal[1][idx]);
 
@@ -866,7 +894,7 @@ void StartDefaultTask(void const * argument)
 		
 		// STAGE 2 : Generate the Weight Matrix using fast ica
 		if(stage == 2){
-			printf("----------------- Stage 2 ----------------------");
+			printf("----------------- Stage 2 : FAST ICA ----------------------\n");
 			fast_ica(1000, 0.0001);
 			
 			// Set stage light to off
@@ -875,7 +903,8 @@ void StartDefaultTask(void const * argument)
 		
 		// STAGE 3 : Use Weight Matrix to get the original sine waves (Reuse the Memory)
 		if(stage == 3){
-			printf("----------------- Stage 3 ----------------------");
+			printf("----------------- Stage 3 : FILTER MIX MATRIX ----------------------\n");
+			
 			filter();
 			
 			// Set stage light to off
@@ -884,13 +913,41 @@ void StartDefaultTask(void const * argument)
 		//TODO
 		// STAGE 4 : Compare the two result
 		if(stage == 4){
-			printf("----------------- Stage 4 ----------------------");
+			printf("----------------- Stage 4 : COMPARISON ----------------------\n");
 		
+			for(int i = 0; i < 32000; i++){
+				
+					idx = i % buf_size;
+				
+					//Generate Similar initial wave
+					s[0] = arm_sin_f32((2 * PI * f[0] * i) / sampling_freq) + 1;
+					s[1] = arm_sin_f32((2 * PI * f[1] * i) / sampling_freq) + 1;
+					s[0] *= scale_coeff;
+					s[1] *= scale_coeff;
+				
+					// read to buffer from flash
+					if(flash_flag && idx == 0){
+						offset = (i / buf_size) * buf_size * sizeof(float);
+						BSP_QSPI_Read((uint8_t *)signal_w[0], S0W_START_ADDR  + offset, DATA_WIDTH);
+						BSP_QSPI_Read((uint8_t *)signal_w[1], S1W_START_ADDR  + offset, DATA_WIDTH);
+					}
+					
+					// Output Difference of magnitude
+					printf("%f\t%f\t%d\n", signal_w[0][idx]-s[0], signal_w[1][idx]-s[1], i);
+				
+			}
+			// Set stage light to off
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
+		}
+		
+		if(stage == 5){
+			printf("----------------- Stage 5 : DONE ----------------------\n");
 			
 			// Set stage light to off
 			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET  );
 		}
 		
+		HAL_Delay(1000);
   }
   /* USER CODE END 5 */
 }
